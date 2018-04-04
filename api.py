@@ -10,6 +10,7 @@ from optparse import OptionParser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from six import string_types
 from scoring import get_score, get_interests
+from store import Store
 
 SALT = "Otus"
 ADMIN_LOGIN = "admin"
@@ -71,8 +72,8 @@ class PhoneField(Field):
     def validate(self, value):
         if not isinstance(value, string_types) and not isinstance(value, int):
             raise ValueError("Phone number must be numeric or string value")
-        if not str(value).startswith("7"):
-            raise ValueError("Incorect phone number format, should be 7XXXXXXXXX")
+        if not str(value).startswith("7") or not len(str(value)) == 11 or not str(value).isdigit():
+            raise ValueError("Incorect phone number format, should be 7XXXXXXXXXX")
 
 
 class DateField(Field):
@@ -226,8 +227,6 @@ def clients_interests_handler(request, ctx, store):
 
 
 def method_handler(request, ctx, store):
-    #response, code = None, None
-
     handlers = {"online_score": online_score_handler,
                 "clients_interests": clients_interests_handler}
 
@@ -249,7 +248,7 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
     router = {
         "method": method_handler
     }
-    store = None
+    store = Store()
 
     def get_request_id(self, headers):
         return headers.get('HTTP_X_REQUEST_ID', uuid.uuid4().hex)
