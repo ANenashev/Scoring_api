@@ -48,11 +48,17 @@ class Field(object):
     def validate(self, value):
         pass
 
+    def prepare_value(self, value):
+        return value
+
 
 class CharField(Field):
     def validate(self, value):
         if not isinstance(value, string_types):
             raise ValueError("This field must be a string")
+
+    def prepare_value(self, value):
+        return str(value)
 
 
 class ArgumentsField(Field):
@@ -60,12 +66,18 @@ class ArgumentsField(Field):
         if not isinstance(value, dict):
             raise ValueError("This field must be a dict")
 
+    def prepare_value(self, value):
+        return super().prepare_value(value)
+
 
 class EmailField(CharField):
     def validate(self, value):
         super(EmailField, self).validate(value)
         if "@" not in value:
             raise ValueError("Invalid email address")
+
+    def prepare_value(self, value):
+        return super().prepare_value(value)
 
 
 class PhoneField(Field):
@@ -75,6 +87,9 @@ class PhoneField(Field):
         if not str(value).startswith("7") or not len(str(value)) == 11 or not str(value).isdigit():
             raise ValueError("Incorect phone number format, should be 7XXXXXXXXXX")
 
+    def prepare_value(self, value):
+        return super().prepare_value(value)
+
 
 class DateField(Field):
     def validate(self, value):
@@ -82,6 +97,9 @@ class DateField(Field):
             datetime.datetime.strptime(value, '%d.%m.%Y')
         except ValueError:
             raise ValueError("Incorect date format, should be DD.MM.YYYY")
+
+    def prepare_value(self, value):
+        return datetime.datetime.strptime(value, '%d.%m.%Y')
 
 
 class BirthDayField(DateField):
@@ -91,11 +109,17 @@ class BirthDayField(DateField):
         if datetime.datetime.now().year - bdate.year > 70:
             raise ValueError("Incorrect birth day")
 
+    def prepare_value(self, value):
+        return datetime.datetime.strptime(value, '%d.%m.%Y')
+
 
 class GenderField(Field):
     def validate(self, value):
         if value not in GENDERS:
             raise ValueError("Gender must be equal to 0,1 or 2")
+
+    def prepare_value(self, value):
+        return int(value)
 
 
 class ClientIDsField(Field):
@@ -105,15 +129,18 @@ class ClientIDsField(Field):
         if not all(isinstance(v, int) and v >= 0 for v in values):
             raise ValueError("All elements must be positive integers")
 
+    def prepare_value(self, value):
+        return super().prepare_value(value)
+
 
 class DeclarativeFieldsMetaclass(type):
     def __new__(meta, name, bases, attrs):
         new_class = super(DeclarativeFieldsMetaclass, meta).__new__(meta, name, bases, attrs)
-        fields = []
+        fields = {}
         for field_name, field in attrs.items():
             if isinstance(field, Field):
-                field._name = field_name
-                fields.append((field_name, field))
+                #field._name = field_name
+                fields[field_name] = field
         new_class.fields = fields
         return new_class
 
@@ -126,8 +153,17 @@ class BaseRequest(object, metaclass=DeclarativeFieldsMetaclass):
             setattr(self, field_name, value)
             self.base_fields.append(field_name)
 
+    def __getitem__(self, name):
+        """Return field's value in appropriate format"""
+        if name in self.base_fields:
+            value = getattr(self, str(name), None)
+            field = self.fields[name]
+            return field.prepare_value(value)
+        else:
+            return None
+
     def validate(self):
-        for name, field in self.fields:
+        for name, field in self.fields.items():
             if name not in self.base_fields:
                 if field.required:
                     self._errors[name] = "This field is required"
@@ -140,7 +176,7 @@ class BaseRequest(object, metaclass=DeclarativeFieldsMetaclass):
             try:
                 field.validate(value)
             except ValueError as e:
-                self._errors[name] = e.message
+                self._errors[name] = e
 
     @property
     def errors(self):
@@ -207,8 +243,8 @@ def online_score_handler(request, ctx, store):
     if request.is_admin:
         return {"score": 42}, OK
     else:
-        score = get_score(store, r.phone, r.email, birthday=r.birthday, gender=r.gender,
-                          first_name=r.first_name, last_name=r.last_name)
+        score = get_score(store, r['phone'], r['email'], birthday=r['birthday'], gender=r['gender'],
+                          first_name=r['first_name'], last_name=r['last_name'])
         return {"score": score}, OK
 
 
@@ -216,7 +252,7 @@ def clients_interests_handler(request, ctx, store):
     r = ClientsInterestsRequest(**request.arguments)
     r.validate()
     if not r.is_valid():
-        return r.erros, INVALID_REQUEST
+        return r.errors, INVALID_REQUEST
 
     response = {}
     for cid in r.client_ids:
@@ -286,6 +322,7 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
         logging.info(context)
         self.wfile.write(json.dumps(r).encode('utf-8'))
         return
+
 
 if __name__ == "__main__":
     op = OptionParser()
