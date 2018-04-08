@@ -8,12 +8,13 @@ def get_score(store, phone, email, birthday=None, gender=None, first_name=None, 
         last_name or "",
         birthday.strftime("%Y%m%d") if birthday is not None else "",
     ]
-    key = "uid:" + hashlib.md5("".join(key_parts)).hexdigest()
+    to_hash = "".join(key_parts)
+    key = "uid:" + hashlib.md5(to_hash.encode('utf-8')).hexdigest()
     # try get from cache,
     # fallback to heavy calculation in case of cache miss
     score = store.cache_get(key) or 0
     if score:
-        return score
+        return float(score)
     if phone:
         score += 1.5
     if email:
@@ -29,4 +30,5 @@ def get_score(store, phone, email, birthday=None, gender=None, first_name=None, 
 
 def get_interests(store, cid):
     r = store.get("i:%s" % cid)
+    r = r.decode('utf-8').replace('\'', '\"')
     return json.loads(r) if r else []
